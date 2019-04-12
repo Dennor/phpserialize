@@ -156,6 +156,11 @@ func encodeStructKey(name string) string {
 }
 
 func typeEncoder(t reflect.Type) func(*Encoder, reflect.Value) error {
+	if t.Implements(marshalerType) {
+		return func(e *Encoder, v reflect.Value) error {
+			return e.encodeMarshaler(v)
+		}
+	}
 	if t == reflect.TypeOf(PhpObject{}) {
 		return func(e *Encoder, v reflect.Value) error {
 			return e.encodePhpObject(v)
@@ -190,13 +195,20 @@ func typeEncoder(t reflect.Type) func(*Encoder, reflect.Value) error {
 		return func(e *Encoder, v reflect.Value) error {
 			return e.encodeStruct(v)
 		}
-	case reflect.Ptr, reflect.Interface:
+	case reflect.Ptr:
 		f := typeEncoder(t.Elem())
 		return func(e *Encoder, v reflect.Value) error {
 			if v.IsNil() {
 				return e.encodeNil(v)
 			}
 			return f(e, v)
+		}
+	case reflect.Interface:
+		return func(e *Encoder, v reflect.Value) error {
+			if v.IsNil() {
+				return e.encodeNil(v)
+			}
+			return e.encodeValue(v)
 		}
 	}
 	return nil

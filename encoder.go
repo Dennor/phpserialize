@@ -66,6 +66,9 @@ func (e *Encoder) encodeKey(v reflect.Value) error {
 }
 
 func (e *Encoder) encodeValue(v reflect.Value) error {
+	if v.Type().Implements(marshalerType) {
+		return e.encodeMarshaler(v)
+	}
 	if isNil(v) {
 		return e.encodeNil(v)
 	}
