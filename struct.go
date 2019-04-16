@@ -1,9 +1,19 @@
 package phpserialize
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"sync"
+)
+
+type Stringer interface {
+	String() string
+}
+
+var (
+	goStringerType = reflect.TypeOf((*fmt.GoStringer)(nil)).Elem()
+	stringerType   = reflect.TypeOf((*Stringer)(nil)).Elem()
 )
 
 func isStruct(v reflect.Value) bool {
@@ -31,11 +41,21 @@ func omitempty(opts []string) bool {
 	return false
 }
 
+func asString(opts []string) bool {
+	for _, opt := range opts {
+		if opt == "string" {
+			return true
+		}
+	}
+	return false
+}
+
 type field struct {
 	typ        reflect.Type
 	tagged     bool
 	name       string
 	omitEmpty  bool
+	asString   bool
 	index      []int
 	encode     func(e *Encoder, v reflect.Value) error
 	encodedKey string
@@ -48,6 +68,12 @@ func (e *Encoder) encodeStruct(v reflect.Value) error {
 	for i := 0; i < len(fields); i++ {
 		fv := v.Field(fields[i].index[0])
 		for _, idx := range fields[i].index[1:] {
+			if fv.Kind() == reflect.Ptr {
+				if fv.IsNil() {
+					fv.Set(reflect.New(fv.Type().Elem()))
+				}
+				fv = fv.Elem()
+			}
 			fv = fv.Field(idx)
 		}
 		if fields[i].omitEmpty && isEmptyValue(fv) {
@@ -129,6 +155,7 @@ func typeFields(t reflect.Type) []field {
 						tagged:    tagged,
 						name:      name,
 						omitEmpty: omitempty(opts),
+						asString:  asString(opts),
 						index:     index,
 					})
 					continue
@@ -144,7 +171,18 @@ func typeFields(t reflect.Type) []field {
 		fields = append(fields[:orphan-i], fields[orphan-i+1:]...)
 	}
 	for i := range fields {
-		fields[i].encode = typeEncoder(fields[i].typ)
+		typ := t
+		for _, i := range fields[i].index {
+			if typ.Kind() == reflect.Ptr {
+				typ = typ.Elem()
+			}
+			typ = typ.Field(i).Type
+		}
+		if fields[i].asString {
+			fields[i].encode = asStringEncoder(typ)
+		} else {
+			fields[i].encode = typeEncoder(typ)
+		}
 		fields[i].encodedKey = encodeStructKey(fields[i].name)
 	}
 	return fields
@@ -209,6 +247,70 @@ func typeEncoder(t reflect.Type) func(*Encoder, reflect.Value) error {
 				return e.encodeNil(v)
 			}
 			return e.encodeValue(v)
+		}
+	}
+	return nil
+}
+
+func asStringEncoder(t reflect.Type) func(e *Encoder, v reflect.Value) error {
+	if t.Implements(goStringerType) {
+		return func(e *Encoder, v reflect.Value) error {
+			return e.encodeStringRaw(v.Interface().(fmt.GoStringer).GoString())
+		}
+	}
+	if t.Implements(stringerType) {
+		return func(e *Encoder, v reflect.Value) error {
+			return e.encodeStringRaw(v.Interface().(Stringer).String())
+		}
+	}
+	switch t.Kind() {
+	case reflect.Bool:
+		return func(e *Encoder, v reflect.Value) error {
+			if v.Bool() {
+				return e.encodeStringRaw(`s:1:"true";`)
+			}
+			return e.encodeStringRaw(`s:1:"false";`)
+		}
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return func(e *Encoder, v reflect.Value) error {
+			b := appendInt(e.scratch[:0], v.Int())
+			lb := appendInt(e.scratch[len(b):len(b)], int64(len(b)))
+			e.WriteString(`s:`)
+			e.Write(e.scratch[len(b) : len(b)+len(lb)])
+			e.WriteString(`:"`)
+			e.Write(e.scratch[:len(b)])
+			e.WriteString(`";`)
+			return nil
+		}
+	case reflect.Float32, reflect.Float64:
+		return func(e *Encoder, v reflect.Value) error {
+			bitSize := 32
+			if t.Kind() == reflect.Float64 {
+				bitSize = 64
+			}
+			b := appendFloat(e.scratch[:0], v.Float(), bitSize)
+			lb := appendInt(e.scratch[len(b):len(b)], int64(len(b)))
+			e.WriteString(`s:`)
+			e.Write(e.scratch[len(b):len(lb)])
+			e.WriteString(`:"`)
+			e.Write(e.scratch[:len(b)])
+			e.WriteString(`";`)
+			return nil
+		}
+	case reflect.String:
+		return func(e *Encoder, v reflect.Value) error {
+			return e.encodeStringRaw(v.String())
+		}
+	case reflect.Ptr:
+		f := asStringEncoder(t.Elem())
+		if f == nil {
+			return nil
+		}
+		return func(e *Encoder, v reflect.Value) error {
+			if v.IsNil() {
+				return e.encodeNil(v)
+			}
+			return f(e, v)
 		}
 	}
 	return nil
