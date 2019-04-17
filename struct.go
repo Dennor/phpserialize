@@ -267,9 +267,11 @@ func asStringEncoder(t reflect.Type) func(e *Encoder, v reflect.Value) error {
 	case reflect.Bool:
 		return func(e *Encoder, v reflect.Value) error {
 			if v.Bool() {
-				return e.encodeStringRaw(`s:1:"true";`)
+				e.WriteString(`s:4:"true";`)
+				return nil
 			}
-			return e.encodeStringRaw(`s:1:"false";`)
+			e.WriteString(`s:5:"false";`)
+			return nil
 		}
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		return func(e *Encoder, v reflect.Value) error {
