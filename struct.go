@@ -271,9 +271,20 @@ func asStringEncoder(t reflect.Type) func(e *Encoder, v reflect.Value) error {
 			}
 			return e.encodeStringRaw(`s:1:"false";`)
 		}
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		return func(e *Encoder, v reflect.Value) error {
 			b := appendInt(e.scratch[:0], v.Int())
+			lb := appendInt(e.scratch[len(b):len(b)], int64(len(b)))
+			e.WriteString(`s:`)
+			e.Write(e.scratch[len(b) : len(b)+len(lb)])
+			e.WriteString(`:"`)
+			e.Write(e.scratch[:len(b)])
+			e.WriteString(`";`)
+			return nil
+		}
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return func(e *Encoder, v reflect.Value) error {
+			b := appendUint(e.scratch[:0], v.Uint())
 			lb := appendInt(e.scratch[len(b):len(b)], int64(len(b)))
 			e.WriteString(`s:`)
 			e.Write(e.scratch[len(b) : len(b)+len(lb)])
