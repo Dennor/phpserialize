@@ -253,14 +253,26 @@ func typeEncoder(t reflect.Type) func(*Encoder, reflect.Value) error {
 }
 
 func asStringEncoder(t reflect.Type) func(e *Encoder, v reflect.Value) error {
-	if t.Implements(goStringerType) {
-		return func(e *Encoder, v reflect.Value) error {
-			return e.encodeStringRaw(v.Interface().(fmt.GoStringer).GoString())
+	if t.Implements(goStringerType) || t.Implements(stringerType) {
+		var f func(e *Encoder, v reflect.Value) error
+		switch {
+		case t.Implements(goStringerType):
+			f = func(e *Encoder, v reflect.Value) error {
+				return e.encodeStringRaw(v.Interface().(fmt.GoStringer).GoString())
+			}
+		case t.Implements(stringerType):
+			f = func(e *Encoder, v reflect.Value) error {
+				return e.encodeStringRaw(v.Interface().(Stringer).String())
+			}
 		}
-	}
-	if t.Implements(stringerType) {
+		if t.Kind() != reflect.Ptr && t.Kind() != reflect.Interface {
+			return f
+		}
 		return func(e *Encoder, v reflect.Value) error {
-			return e.encodeStringRaw(v.Interface().(Stringer).String())
+			if v.IsNil() {
+				return e.encodeStringRaw("")
+			}
+			return f(e, v)
 		}
 	}
 	switch t.Kind() {
