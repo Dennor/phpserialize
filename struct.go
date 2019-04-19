@@ -333,9 +333,10 @@ func asStringEncoder(t reflect.Type) func(e *Encoder, v reflect.Value) error {
 		}
 		return func(e *Encoder, v reflect.Value) error {
 			if v.IsNil() {
-				return e.encodeNil(v)
+				e.WriteString(`s:0:"";`)
+				return nil
 			}
-			return f(e, v)
+			return f(e, v.Elem())
 		}
 	}
 	return nil
