@@ -239,14 +239,14 @@ func typeEncoder(t reflect.Type) func(*Encoder, reflect.Value) error {
 			if v.IsNil() {
 				return e.encodeNil(v)
 			}
-			return f(e, v)
+			return f(e, v.Elem())
 		}
 	case reflect.Interface:
 		return func(e *Encoder, v reflect.Value) error {
 			if v.IsNil() {
 				return e.encodeNil(v)
 			}
-			return e.encodeValue(v)
+			return e.encodeValue(v.Elem())
 		}
 	}
 	return nil
